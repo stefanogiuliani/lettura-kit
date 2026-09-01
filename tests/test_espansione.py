@@ -111,3 +111,38 @@ def test_memoryerror_non_viene_inghiottito_dalla_difesa():
     with mock.patch.object(espansione.zipfile, "ZipFile", side_effect=MemoryError):
         with pytest.raises(MemoryError):
             controlla_espansione(b"PK\x03\x04qualsiasi", tetto_bytes=TETTO)
+
+
+def test_giudica_anche_un_file_su_disco(tmp_path):
+    """Chi ha un PERCORSO non deve caricarsi il file in memoria per farlo giudicare.
+
+    Non e' una comodita': un chiamante che riceve upload li scrive in streaming e non
+    tiene mai il file intero in RAM — ed e' esattamente il rischio da cui questa guardia
+    protegge. Chiedergli i `bytes` per controllarli sarebbe far correre il rischio per
+    poterlo misurare.
+
+    La directory centrale si legge senza decomprimere ed e' O(numero di voci), quindi
+    regge anche su una share di rete.
+    """
+    bomba = tmp_path / "estratto.xlsx"
+    bomba.write_bytes(_zip_con(b"\0" * (2 * TETTO)))
+
+    esito = controlla_espansione(bomba, tetto_bytes=TETTO)
+
+    assert not esito.ok
+    assert esito.motivo == "ostile"
+
+
+def test_un_argomento_che_non_so_leggere_e_un_errore_non_un_via_libera():
+    """⛔ Un cancello che si apre quando non capisce e' peggio di nessun cancello.
+
+    La distinzione: un file che non e' uno zip PASSA — sara' il parser a dire che il
+    formato non e' riconosciuto, ed e' la diagnosi giusta. Ma un ARGOMENTO che la guardia
+    non sa leggere e' un errore di chi chiama, e deve gridare.
+
+    Non e' teorico: prima che l'ingresso su percorso esistesse, passare un `Path` finiva
+    nell'except largo e l'esito era `ok=True`. Su una bomba. Il difetto e' stato visto
+    solo perche' il test sul percorso e' stato scritto prima del codice.
+    """
+    with pytest.raises(TypeError):
+        controlla_espansione(12345, tetto_bytes=TETTO)

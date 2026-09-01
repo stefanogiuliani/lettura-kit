@@ -24,7 +24,9 @@ richiede), non dal formato.
 ```python
 from lettura.espansione import controlla_espansione
 
-esito = controlla_espansione(dati, tetto_bytes=150 * 1024 * 1024)
+# i byte, oppure un percorso — chi riceve upload in streaming non ha i byte,
+# e chiederglieli significherebbe fargli correre il rischio per misurarlo
+esito = controlla_espansione(percorso_o_byte, tetto_bytes=150 * 1024 * 1024)
 if not esito.ok:
     if esito.motivo == "ostile":
         # si espande 642x: non e' un file grande, e' fatto per espandersi

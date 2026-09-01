@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import io
+import os
 import zipfile
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -21,10 +23,26 @@ class Esito:
     rapporto: float | None
 
 
-def _dichiarato(data: bytes) -> int | None:
+def _sorgente(origine):
+    """(cosa dare a `ZipFile`, dimensione compressa). Solleva se non so cos'e'.
+
+    ⚠️ Solleva di proposito, e la distinzione e' importante: un file che NON e' uno zip
+    passa (sara' il parser a dire che non e' riconosciuto), ma un ARGOMENTO che non so
+    leggere e' un errore di chi chiama. Prima che questa funzione esistesse, un `Path`
+    finiva nell'except largo e la guardia rispondeva «tutto bene» su una bomba: un
+    cancello che si apre quando non capisce e' peggio di nessun cancello.
+    """
+    if isinstance(origine, (bytes, bytearray, memoryview)):
+        return io.BytesIO(bytes(origine)), len(origine)
+    if isinstance(origine, (str, Path)):
+        return Path(origine), os.path.getsize(origine)
+    raise TypeError(f"non so leggere {type(origine).__name__}: servono bytes o un percorso")
+
+
+def _dichiarato(sorgente) -> int | None:
     """`None` se non e' uno zip giudicabile."""
     try:
-        with zipfile.ZipFile(io.BytesIO(data)) as z:
+        with zipfile.ZipFile(sorgente) as z:
             return sum(i.file_size for i in z.infolist())
     except MemoryError:
         # ⛔ `MemoryError` E' sottoclasse di `Exception`, quindi l'except qui sotto se
@@ -44,12 +62,21 @@ def _dichiarato(data: bytes) -> int | None:
 
 
 def controlla_espansione(
-    data: bytes, *, tetto_bytes: int, rapporto_sospetto: float = 100
+    origine: bytes | str | Path, *, tetto_bytes: int, rapporto_sospetto: float = 100
 ) -> Esito:
-    dichiarato = _dichiarato(data)
+    """`origine` sono i byte, oppure un percorso.
+
+    Il percorso non e' una comodita': chi riceve upload li scrive in streaming e non
+    tiene mai il file intero in RAM — che e' il rischio da cui questa guardia protegge.
+    Chiedergli i `bytes` significherebbe fargli correre il rischio per poterlo misurare.
+    La directory centrale si legge senza decomprimere, quindi anche su una share di rete
+    costa quanto le voci, non quanto il file.
+    """
+    sorgente, compressi = _sorgente(origine)
+    dichiarato = _dichiarato(sorgente)
     if dichiarato is None:
         return Esito(True, None, None, None)
-    rapporto = dichiarato / max(len(data), 1)
+    rapporto = dichiarato / max(compressi, 1)
     if dichiarato <= tetto_bytes:
         return Esito(True, None, dichiarato, rapporto)
     motivo = "ostile" if rapporto > rapporto_sospetto else "troppo_grande"
