@@ -1,0 +1,39 @@
+lettura-kit: le guardie contro l'input non fidato, in un posto solo
+
+Apre file tabellari che arrivano da fuori senza farsi male. Possiede la LETTURA, non
+cio' che leggi: il dominio — quali colonne, che dialetto, dove sta l'header — resta di
+chi chiama. Il nome dice il confine apposta.
+
+`lettura.espansione` giudica quanto un archivio DICHIARA di diventare, leggendo la
+directory centrale dello zip senza decomprimere niente. Non e' una prova (`file_size` e'
+auto-dichiarato e uno zip costruito apposta puo' mentire): e' il filtro economico, quello
+che sa dire PERCHE'. Distingue «ostile» da «troppo grande», e la distinzione e' il punto:
+sono due AZIONI diverse per chi ha ricevuto il file. A un estratto vero si risponde
+«spezzalo», a un file fatto per espandersi no.
+
+`lettura.isolata` regge cio' che non abbiamo previsto: contro l'ignoto non serve una
+regola piu' furba, serve che morire non costi l'app. Il figlio e' un processo NUOVO, non
+un fork — non eredita loop asyncio, connessioni, monkeypatch — quindi il lavoro si passa
+come "modulo:funzione". E' il vincolo del processo a decidere l'API.
+
+I tetti sono DUE perche' nessuno copre l'altro: `RLIMIT_AS` e' duro e istantaneo ma vive
+solo dove il sistema lo concede (su macOS `setrlimit` rifiuta), la sorveglianza sulla RSS
+funziona ovunque ma CAMPIONA, e una singola allocazione enorme la scavalca.
+
+E «memoria» si dice solo quando lo si SA — dalla sorveglianza o da un segnale. Ogni altro
+guasto del figlio esce come `LetturaFallita` col suo perche' dentro: se ogni morte
+diventasse «memoria esaurita», manderebbe a spezzare un file che non ha niente di grande
+mentre mancava una colonna.
+
+Due misure che il codice porta con se', perche' sono la parte che non si riderivava a
+mente:
+  · l'`except` intorno alla lettura dello zip DEVE essere largo. Fuzzando uno zip valido
+    da 119 byte, i 952 flip di un bit danno 283 `BadZipFile` e 5 `NotImplementedError`
+    («zip file version 8.4»). Elencare i tipi noti significa scoprire il prossimo in
+    produzione.
+  · `MemoryError` e' sottoclasse di `Exception`: quell'except largo se lo mangerebbe, e
+    sarebbe lo stesso difetto che la guardia esiste per evitare, rifatto dentro la
+    guardia. Risale.
+
+Scritta in TDD. 7 test, zero dipendenze: la RSS si legge con `ps`, che c'e' su macOS e su
+Linux — una libreria che entra in molte app paga per tutte cio' che si tira dietro.
